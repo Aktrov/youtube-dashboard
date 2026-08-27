@@ -1,6 +1,7 @@
-youtube-dashboard/*
-app/__pycache__/*
-dashboard/*
+# dashboard/ is this project's virtualenv (see run.bash: `source ./*/bin/activate`)
+dashboard/
+__pycache__/
+*.pyc
 
 # Contains personal subscription/watch data, not source
 youtube_tracker.db
