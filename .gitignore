@@ -5,3 +5,5 @@ __pycache__/
 
 # Contains personal subscription/watch data, not source
 youtube_tracker.db
+youtube_tracker.db.bak-*
+.env

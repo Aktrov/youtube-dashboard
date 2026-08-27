@@ -15,6 +15,11 @@ class Channel(Base):
     description = Column(Text, nullable=True)
     added_at = Column(DateTime, default=datetime.utcnow)
     last_polled_at = Column(DateTime, nullable=True)
+    # Feed health: outcome of the most recent poll attempt. last_poll_ok is
+    # None until the channel has been polled once; last_poll_error holds the
+    # exception text from the last failed poll (cleared on the next success).
+    last_poll_ok = Column(Boolean, nullable=True)
+    last_poll_error = Column(Text, nullable=True)
 
     videos = relationship("Video", back_populates="channel", cascade="all, delete-orphan")
 

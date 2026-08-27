@@ -3,12 +3,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from contextlib import asynccontextmanager
 from app.config import settings
-from app.database import engine, Base
+from app.database import engine, Base, run_lightweight_migrations
 from app.routes import router
 from app.scheduler import start_scheduler, stop_scheduler
 
-# Initialize database tables
+# Initialize database tables, then add any columns introduced after first release.
 Base.metadata.create_all(bind=engine)
+run_lightweight_migrations()
 
 
 @asynccontextmanager

@@ -1,8 +1,9 @@
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc
-from datetime import datetime
+from sqlalchemy import desc, asc, func
+from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from app import models, schemas, rss
+from app.config import settings
 
 
 # Channel operations
@@ -58,6 +59,81 @@ def update_channel_polled(db: Session, channel_id: str) -> Optional[models.Chann
     return db_channel
 
 
+def set_channel_poll_result(
+    db: Session, channel_id: str, ok: bool, error: Optional[str] = None
+) -> Optional[models.Channel]:
+    """Record the outcome of a poll attempt: stamps last_polled_at, sets
+    last_poll_ok, and stores (on failure) / clears (on success) last_poll_error."""
+    db_channel = db.query(models.Channel).filter(models.Channel.channel_id == channel_id).first()
+    if db_channel:
+        db_channel.last_polled_at = datetime.utcnow()
+        db_channel.last_poll_ok = ok
+        db_channel.last_poll_error = None if ok else (error or "unknown error")[:500]
+        db.commit()
+        db.refresh(db_channel)
+    return db_channel
+
+
+def get_channel_unwatched_counts(db: Session) -> Dict[str, int]:
+    """{channel_id: number of unwatched videos} for every channel with at least one."""
+    rows = (
+        db.query(models.Video.channel_id, func.count(models.Video.id))
+        .filter(models.Video.is_watched == False)  # noqa: E712
+        .group_by(models.Video.channel_id)
+        .all()
+    )
+    return {channel_id: count for channel_id, count in rows}
+
+
+def get_dashboard_stats(db: Session) -> Dict[str, Any]:
+    """Headline numbers for the Feed Vitals strip."""
+    now = datetime.utcnow()
+    week_ago = now - timedelta(days=7)
+
+    total_channels = db.query(func.count(models.Channel.id)).scalar() or 0
+    unwatched = db.query(func.count(models.Video.id)).filter(
+        models.Video.is_watched == False  # noqa: E712
+    ).scalar() or 0
+    bookmarked = db.query(func.count(models.Video.id)).filter(
+        models.Video.is_bookmarked == True  # noqa: E712
+    ).scalar() or 0
+    added_this_week = db.query(func.count(models.Video.id)).filter(
+        models.Video.added_at >= week_ago
+    ).scalar() or 0
+
+    errored = db.query(func.count(models.Channel.id)).filter(
+        models.Channel.last_poll_ok == False  # noqa: E712
+    ).scalar() or 0
+
+    last_polled_at = db.query(func.max(models.Channel.last_polled_at)).scalar()
+    never_polled = db.query(func.count(models.Channel.id)).filter(
+        models.Channel.last_polled_at.is_(None)
+    ).scalar() or 0
+
+    # func.max() on SQLite may hand back a datetime or a raw "YYYY-MM-DD HH:MM:SS"
+    # string depending on driver/type coercion — normalise to ISO-8601 + Z so
+    # the browser's Date() parses it on every platform (iOS Safari rejects the
+    # space-separated form).
+    if hasattr(last_polled_at, "isoformat"):
+        last_poll_iso = last_polled_at.isoformat() + "Z"
+    elif last_polled_at:
+        last_poll_iso = str(last_polled_at).replace(" ", "T") + "Z"
+    else:
+        last_poll_iso = None
+
+    return {
+        "channels": total_channels,
+        "unwatched": unwatched,
+        "bookmarked": bookmarked,
+        "added_this_week": added_this_week,
+        "errored_feeds": errored,
+        "never_polled": never_polled,
+        "last_polled_at": last_poll_iso,
+        "poll_interval_seconds": settings.poll_interval,
+        "keep_per_channel": settings.keep_per_channel,
+    }
+
+
 # Video operations
 def get_video(db: Session, video_id: str) -> Optional[models.Video]:
     return db.query(models.Video).filter(models.Video.video_id == video_id).first()
@@ -68,30 +144,56 @@ def get_videos(
     channel_id: Optional[str] = None,
     is_watched: Optional[bool] = None,
     is_bookmarked: Optional[bool] = None,
+    since: Optional[datetime] = None,
+    sort: str = "newest",
     skip: int = 0,
-    limit: int = 50
+    limit: int = 100
 ) -> List[models.Video]:
     query = db.query(models.Video).options(joinedload(models.Video.channel))
-    
+
     if channel_id is not None:
         query = query.filter(models.Video.channel_id == channel_id)
     if is_watched is not None:
         query = query.filter(models.Video.is_watched == is_watched)
     if is_bookmarked is not None:
         query = query.filter(models.Video.is_bookmarked == is_bookmarked)
-        
-    return query.order_by(desc(models.Video.published_at), desc(models.Video.added_at)).offset(skip).limit(limit).all()
+    if since is not None:
+        query = query.filter(models.Video.published_at >= since)
+
+    if sort == "oldest":
+        query = query.order_by(asc(models.Video.published_at), asc(models.Video.added_at))
+    else:  # "newest" (default)
+        query = query.order_by(desc(models.Video.published_at), desc(models.Video.added_at))
+
+    return query.offset(skip).limit(limit).all()
+
+
+def mark_videos_watched(
+    db: Session,
+    channel_id: Optional[str] = None,
+    only_unwatched: bool = True,
+) -> int:
+    """Bulk-mark videos as watched. Scoped to one channel if channel_id is
+    given, otherwise every channel. Returns the number of rows changed."""
+    query = db.query(models.Video)
+    if channel_id is not None:
+        query = query.filter(models.Video.channel_id == channel_id)
+    if only_unwatched:
+        query = query.filter(models.Video.is_watched == False)  # noqa: E712
+    changed = query.update({models.Video.is_watched: True}, synchronize_session=False)
+    db.commit()
+    return changed
 
 
 def add_videos_if_not_exists(db: Session, channel_id: str, videos_data: List[Dict[str, Any]]) -> List[models.Video]:
     """
-    Add up to 2 videos from the RSS feed to the database for this channel.
-    The feed data comes from the UULF (Videos-only) playlist, but that
-    filtering isn't reliable (longer-format Shorts especially slip through),
-    so each new candidate is verified directly against YouTube via
-    rss.is_video_short() before being stored.
+    Add up to settings.keep_per_channel videos from the RSS feed to the
+    database for this channel. The feed data comes from the UULF (Videos-only)
+    playlist, but that filtering isn't reliable (longer-format Shorts
+    especially slip through), so each new candidate is verified directly
+    against YouTube via rss.is_video_short() before being stored.
     """
-    MAX_PER_CHANNEL = 2
+    MAX_PER_CHANNEL = settings.keep_per_channel
 
     new_videos = []
     stored_count = 0  # confirmed non-Short videos for this channel
@@ -135,9 +237,11 @@ def add_videos_if_not_exists(db: Session, channel_id: str, videos_data: List[Dic
 
 def prune_videos_for_channel(db: Session, channel_id: str):
     """
-    Keep only the 2 latest videos (by published_at desc) and any bookmarked videos
-    for a given channel, deleting the rest.
+    Keep only the settings.keep_per_channel latest videos (by published_at
+    desc) and any bookmarked videos for a given channel, deleting the rest.
     """
+    keep_n = settings.keep_per_channel
+
     # Get all videos for the channel, sorted by published_at DESC
     videos = (
         db.query(models.Video)
@@ -145,12 +249,12 @@ def prune_videos_for_channel(db: Session, channel_id: str):
         .order_by(desc(models.Video.published_at))
         .all()
     )
-    
+
     # We want to keep:
-    # 1. The 2 latest videos (indexes 0 and 1 in the sorted list)
+    # 1. The keep_n latest videos
     # 2. Any videos where is_bookmarked is True
     to_keep = set()
-    for v in videos[:2]:
+    for v in videos[:keep_n]:
         to_keep.add(v.video_id)
     for v in videos:
         if v.is_bookmarked:

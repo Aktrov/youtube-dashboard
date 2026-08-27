@@ -1,525 +1,1082 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube Subscription Tracker</title>
-    <link rel="icon" type="image/svg+xml" href="{{ base_path }}/static/logo.svg">
-    <!-- Google Fonts & FontAwesome Icons -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap"
-        rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ base_path }}/static/css/style.css">
-</head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>YT Relay</title>
+<link rel="icon" type="image/svg+xml" href="{{ base_path }}/static/logo.svg">
+<link rel="manifest" href="{{ base_path }}/manifest.webmanifest">
+<meta name="theme-color" content="#06080a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="YT Relay">
+<link rel="apple-touch-icon" href="{{ base_path }}/static/logo.svg">
+<script>
+  // Set the theme before first paint so there's no flash of the wrong palette.
+  document.documentElement.setAttribute(
+    "data-theme",
+    localStorage.getItem("yt-relay-theme") || "dark"
+  );
+</script>
+<style>
+  @font-face {
+    font-family: 'Orbitron';
+    font-style: normal;
+    font-weight: 400 900;
+    font-display: swap;
+    src: url("{{ base_path }}/static/fonts/orbitron.woff2") format('woff2');
+  }
 
+  :root {
+    color-scheme: dark;
+    --void:        #06080a;
+    --page:        #0a0d10;
+    --surface-1:   #12171b;
+    --surface-2:   #171d22;
+    --surface-3:   #1e262c;
+    --gridline:    rgba(255,255,255,0.05);
+    --border:      rgba(120,190,220,0.16);
+    --border-hi:   rgba(120,220,255,0.5);
+    --text-primary:   #eaf6fa;
+    --text-secondary: #9db3bd;
+    --text-muted:     #647680;
+    --cyan:        #35e0ff;
+    --cyan-dim:    #1c7a91;
+    --amber:       #ff9a2e;
+    --amber-dim:   #8a4f10;
+    --red:         #ff4d4d;
+    --good:        #35e0ff;
+    --grid-bg:     rgba(53,224,255,0.05);
+    --scrim:       rgba(3,5,7,0.86);
+    /* Orbitron is a display face — great for the logo and a few large
+       headings, hard to read anywhere dense. Body text uses the system UI
+       stack. */
+    --font-display: 'Orbitron', system-ui, sans-serif;
+    --font-body:    system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --void:        #eef1f3;
+    --page:        #f4f6f7;
+    --surface-1:   #ffffff;
+    --surface-2:   #f7f9fa;
+    --surface-3:   #eef2f4;
+    --gridline:    rgba(10,30,40,0.06);
+    --border:      rgba(20,80,110,0.18);
+    --border-hi:   rgba(10,120,150,0.55);
+    --text-primary:   #0c1417;
+    --text-secondary: #3f5560;
+    --text-muted:     #6d838d;
+    --cyan:        #0899c2;
+    --cyan-dim:    #7fc8dc;
+    --amber:       #c96a12;
+    --amber-dim:   #e8b98a;
+    --red:         #cc2f2f;
+    --good:        #0899c2;
+    --grid-bg:     rgba(8,153,194,0.06);
+    --scrim:       rgba(20,35,42,0.55);
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font: 15.5px/1.55 var(--font-body);
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    min-height: 100svh;
+    background-image:
+      linear-gradient(var(--grid-bg) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-bg) 1px, transparent 1px);
+    background-size: 42px 42px;
+  }
+  .hud { font-family: var(--font-display); }
+  a { color: inherit; text-decoration: none; }
+  button { font-family: inherit; }
+  .ic { width: 1em; height: 1em; fill: currentColor; flex: none; vertical-align: -0.13em; }
+
+  /* ---------------- Layout shell ---------------- */
+  .app { display: flex; min-height: 100svh; }
+
+  .sidebar {
+    width: 300px; flex: none;
+    background: var(--surface-1);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    position: sticky; top: 0; align-self: flex-start;
+    height: 100svh; overflow-y: auto;
+    padding: 18px 16px calc(20px + env(safe-area-inset-bottom));
+  }
+  .main {
+    flex: 1 1 auto; min-width: 0;
+    display: flex; flex-direction: column;
+  }
+
+  /* ---------------- Sidebar content ---------------- */
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 4px;
+  }
+  .brand img { width: 30px; height: 30px; flex: none;
+    filter: drop-shadow(0 0 8px color-mix(in srgb, var(--cyan) 40%, transparent)); }
+  .brand .name {
+    font-family: var(--font-display);
+    font-weight: 800; font-size: 18px; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--text-primary);
+  }
+  .brand .name b { color: var(--amber); font-weight: 800; }
+  .brand-sub {
+    font-family: var(--font-display);
+    font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase;
+    color: var(--cyan); opacity: 0.85; margin: 0 0 16px 40px;
+  }
+  .sidebar-close {
+    display: none;
+    align-items: center; justify-content: center; padding: 0;
+    margin-left: auto; width: 38px; height: 38px;
+    background: transparent; border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text-secondary); font-size: 22px; line-height: 1; cursor: pointer;
+  }
+
+  .subscribe h3, .subs h3 {
+    font-family: var(--font-display);
+    font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--text-secondary); margin: 0 0 10px;
+  }
+  .field {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 4px; padding: 0 10px; margin-bottom: 8px;
+  }
+  .field:focus-within { border-color: var(--border-hi); }
+  .field .ic { color: var(--text-muted); font-size: 15px; }
+  .field input {
+    flex: 1; min-width: 0; background: transparent; border: 0; outline: 0;
+    color: var(--text-primary); font-size: 15px; padding: 10px 0;
+  }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    font-family: var(--font-body);
+    font-size: 13px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase;
+    padding: 10px 14px; min-height: 40px;
+    background: transparent; border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text-secondary); cursor: pointer;
+    transition: border-color .15s, color .15s, box-shadow .15s, background .15s;
+  }
+  .btn:hover:not(:disabled) { color: var(--text-primary); border-color: var(--border-hi); }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+  .btn.full { width: 100%; }
+  .btn.primary {
+    background: color-mix(in srgb, var(--cyan) 12%, transparent);
+    border-color: var(--cyan-dim); color: var(--text-primary);
+  }
+  .btn.primary:hover:not(:disabled) { border-color: var(--cyan); box-shadow: 0 0 10px color-mix(in srgb, var(--cyan) 35%, transparent); }
+  .btn.ghost { border-style: dashed; }
+
+  .sidebar-actions { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 18px; }
+
+  .subs { flex: 1; }
+  .subs .count { color: var(--text-muted); font-weight: 400; }
+  .chan-list { list-style: none; margin: 10px 0 0; padding: 0; }
+  .chan {
+    display: flex; align-items: center; gap: 9px;
+    border-radius: 4px; padding: 7px 8px;
+    color: var(--text-secondary);
+  }
+  .chan + .chan { margin-top: 2px; }
+  .chan:hover { background: var(--surface-2); color: var(--text-primary); }
+  .chan.active { background: var(--surface-3); color: var(--text-primary); box-shadow: inset 2px 0 0 var(--cyan); }
+  .chan a { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; }
+  .chan .avatar, .chan .avatar-ph {
+    width: 26px; height: 26px; border-radius: 50%; flex: none; object-fit: cover;
+    background: var(--surface-3);
+  }
+  .chan .avatar-ph {
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-body); font-size: 13px; font-weight: 700;
+    color: var(--cyan);
+  }
+  .chan .cname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14.5px; }
+  .chan .pill {
+    flex: none; font-size: 12px; font-weight: 700;
+    min-width: 20px; text-align: center; padding: 1px 7px; border-radius: 999px;
+    background: color-mix(in srgb, var(--cyan) 16%, transparent); color: var(--cyan);
+    font-family: var(--font-body); font-variant-numeric: tabular-nums;
+  }
+  .chan .warn { flex: none; color: var(--amber); font-size: 15px; display: inline-flex; }
+  .chan .warn.err { color: var(--red); }
+  .chan .kill {
+    flex: none; width: 26px; height: 26px; display: none;
+    align-items: center; justify-content: center;
+    background: transparent; border: 0; color: var(--text-muted); cursor: pointer; border-radius: 4px;
+  }
+  .chan:hover .kill { display: inline-flex; }
+  .chan .kill:hover { color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
+
+  /* ---------------- Top bar ---------------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 40;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 12px 18px;
+    padding-top: calc(12px + env(safe-area-inset-top));
+    background: color-mix(in srgb, var(--page) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+    opacity: 0.35;
+  }
+  .menu-btn { display: none; width: 42px; height: 42px; flex: none;
+    align-items: center; justify-content: center; padding: 0;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text-secondary); font-size: 18px; cursor: pointer; }
+  .search {
+    flex: 1 1 220px; min-width: 0;
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 4px;
+    padding: 0 10px;
+  }
+  .search:focus-within { border-color: var(--border-hi); }
+  .search .ic { color: var(--text-muted); font-size: 15px; }
+  .search input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0;
+    color: var(--text-primary); font-size: 15.5px; padding: 10px 0; }
+  .search .clear { color: var(--text-muted); display: inline-flex; padding: 4px; }
+  .search .clear:hover { color: var(--red); }
+
+  .seg {
+    display: inline-flex; background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
+  }
+  .seg a, .seg button {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--font-body);
+    font-size: 12.5px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase;
+    padding: 9px 12px; min-height: 40px;
+    color: var(--text-secondary); background: transparent; border: 0; cursor: pointer;
+  }
+  .seg a + a, .seg button + button { border-left: 1px solid var(--border); }
+  .seg a.active, .seg button.active { background: var(--surface-3); color: var(--cyan); }
+  .seg a:hover:not(.active), .seg button:hover:not(.active) { color: var(--text-primary); }
+  .seg .lbl { display: inline; }
+  /* single toggle: the arrow flips to mirror what's on top */
+  .sort-toggle .ic { transition: transform .18s ease; }
+  .sort-toggle.asc .ic { transform: scaleY(-1); }
+  .sort-toggle { color: var(--cyan); }
+
+  .icon-btn {
+    width: 42px; height: 42px; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text-secondary); cursor: pointer; font-size: 17px;
+  }
+  .icon-btn:hover { color: var(--text-primary); border-color: var(--border-hi); }
+  .icon-btn.spin .ic { animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  [data-theme="dark"] .theme-toggle .i-sun { display: none; }
+  [data-theme="light"] .theme-toggle .i-moon { display: none; }
+
+  /* ---------------- Vitals strip (collapsible) ---------------- */
+  .vitals-panel { margin: 14px 18px 0; }
+  .vitals-summary {
+    list-style: none; cursor: pointer; user-select: none;
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px; min-height: 44px;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 4px;
+    font-family: var(--font-display); font-size: 11px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--text-secondary);
+  }
+  .vitals-summary::-webkit-details-marker { display: none; }
+  .vitals-summary:hover { color: var(--text-primary); }
+  .vitals-summary .chev { font-size: 13px; color: var(--text-muted); transition: transform .18s ease; }
+  .vitals-panel[open] .vitals-summary .chev { transform: rotate(90deg); }
+  .vitals-panel[open] .vitals-summary { border-radius: 4px 4px 0 0; border-bottom-color: transparent; }
+  .vs-label { flex: 1; }
+  .vs-badge {
+    font-family: var(--font-body); font-size: 12px; font-weight: 700; letter-spacing: 0;
+    padding: 1px 8px; border-radius: 999px; font-variant-numeric: tabular-nums;
+    background: color-mix(in srgb, var(--cyan) 16%, transparent); color: var(--cyan);
+  }
+  .vitals {
+    display: grid; gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    padding: 12px;
+    border: 1px solid var(--border); border-top: 0; border-radius: 0 0 4px 4px;
+  }
+  .vital {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 4px; padding: 11px 13px;
+    clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  }
+  .vital .k {
+    font-family: var(--font-body);
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 5px;
+  }
+  .vital .v {
+    font-family: var(--font-display);
+    font-size: 25px; font-weight: 700; line-height: 1.05; color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+  .vital .v.accent { color: var(--cyan); }
+  .vital .v.warn { color: var(--amber); }
+  .vital .v.bad { color: var(--red); }
+  .vital .s { font-size: 12.5px; color: var(--text-secondary); margin-top: 3px; }
+
+  /* ---------------- Video grid ---------------- */
+  .content { padding: 12px 18px calc(90px + env(safe-area-inset-bottom)); }
+
+  .grid {
+    display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+  .grid.list { grid-template-columns: 1fr; }
+
+  .card {
+    background: linear-gradient(155deg, var(--surface-2), var(--surface-1));
+    border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+    display: flex; flex-direction: column;
+    transition: border-color .15s, transform .15s, box-shadow .15s, opacity .2s;
+  }
+  .card:hover { border-color: var(--border-hi); }
+  .card.sel { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan) inset, 0 0 16px color-mix(in srgb, var(--cyan) 25%, transparent); }
+  .thumb { position: relative; aspect-ratio: 16 / 9; background: var(--void); cursor: pointer; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb .play {
+    position: absolute; inset: 0; margin: auto; width: 52px; height: 52px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--scrim); border-radius: 50%; color: #fff; font-size: 18px;
+    opacity: 0; transition: opacity .15s;
+  }
+  .thumb:hover .play { opacity: 1; }
+  .card.watched .thumb img { opacity: 0.5; }
+  .card.watched .thumb::after {
+    content: "WATCHED"; position: absolute; top: 8px; left: 8px;
+    font-family: var(--font-display); font-size: 9px; letter-spacing: 0.12em;
+    padding: 3px 7px; background: var(--scrim); color: var(--cyan); border-radius: 3px;
+  }
+
+  .body { padding: 13px 14px 14px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .tag {
+    font-family: var(--font-body);
+    font-size: 12.5px; font-weight: 600; color: var(--cyan);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .vtitle {
+    font-size: 15.5px; font-weight: 600; line-height: 1.4; color: var(--text-primary);
+    cursor: pointer;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .vtitle:hover { color: var(--cyan); }
+  .vmeta { font-size: 12.5px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: auto; }
+  .vactions { display: flex; gap: 8px; margin-top: 6px; }
+  .act {
+    flex: none; width: 40px; height: 38px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text-secondary); cursor: pointer; font-size: 15px;
+  }
+  .act.wide { flex: 1; gap: 7px; font-family: var(--font-body);
+    font-size: 12.5px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
+  .act:hover { color: var(--text-primary); border-color: var(--border-hi); }
+  .act.on-watch { color: var(--cyan); border-color: var(--cyan-dim); }
+  .act.on-mark { color: var(--amber); border-color: var(--amber-dim); }
+
+  /* list view tweaks */
+  .grid.list .card { flex-direction: row; align-items: stretch; }
+  .grid.list .thumb { width: 200px; aspect-ratio: 16 / 9; flex: none; }
+  .grid.list .body { flex: 1; }
+
+  .empty {
+    text-align: center; color: var(--text-muted);
+    padding: 60px 20px; border: 1px dashed var(--border); border-radius: 6px;
+  }
+  .empty .ic { font-size: 38px; color: var(--text-muted); opacity: 0.6; }
+  .empty h2 { font-family: var(--font-display); font-size: 17px; margin: 14px 0 6px; color: var(--text-secondary); }
+  .empty p { font-size: 14.5px; max-width: 400px; margin: 0 auto; }
+
+  /* ---------------- Video modal ---------------- */
+  .modal {
+    position: fixed; inset: 0; z-index: 1000; display: none;
+    background: var(--scrim); backdrop-filter: blur(4px);
+    overflow-y: auto;
+    padding: max(14px, env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));
+  }
+  .modal.active { display: flex; align-items: flex-start; justify-content: center; }
+  .modal-inner { width: min(920px, 100%); margin: auto 0; }
+  .modal-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+  .modal-bar .mt {
+    font-family: var(--font-display); font-size: 12.5px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--cyan);
+  }
+  .modal-close {
+    flex: none; width: 44px; height: 44px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--surface-1); border: 1px solid var(--border-hi); border-radius: 4px;
+    color: var(--text-primary); font-size: 20px; cursor: pointer;
+  }
+  .modal-close:hover { color: var(--red); border-color: var(--red); }
+  .player { width: 100%; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .player iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .modal-title { margin: 14px 2px 0; font-size: 17px; font-weight: 600; line-height: 1.4; color: var(--text-primary); }
+
+  /* Cinema mode: the modal is put into the Fullscreen API and (where the
+     browser allows it) orientation-locked to landscape, so a tap goes
+     straight to a full-screen landscape player — no chrome, no YouTube. */
+  .modal.cinema { padding: 0; background: #000; align-items: center; }
+  .modal.cinema .modal-inner { width: 100%; height: 100%; max-width: none; margin: 0; display: flex; }
+  .modal.cinema .player { width: 100%; height: 100%; aspect-ratio: auto; border: 0; border-radius: 0; }
+  .modal.cinema .modal-bar {
+    position: fixed; inset: 10px 10px auto auto; margin: 0; z-index: 3;
+    opacity: 1; transition: opacity .18s ease;
+  }
+  /* our close button auto-dismisses ~1.8s after the last tap (tap anywhere to bring it back) */
+  .modal.cinema.chrome-hidden .modal-bar { opacity: 0; pointer-events: none; }
+  .modal.cinema .modal-bar .mt, .modal.cinema .modal-title { display: none; }
+  .modal.cinema .modal-close {
+    background: rgba(0,0,0,0.5); border-color: rgba(255,255,255,0.5); color: #fff;
+  }
+  .modal.cinema .modal-close:hover, .modal.cinema .modal-close:focus { border-color: #fff; }
+
+  /* ---------------- Toast ---------------- */
+  #toasts {
+    position: fixed; left: 0; right: 0; bottom: calc(16px + env(safe-area-inset-bottom));
+    z-index: 1200; display: flex; flex-direction: column; align-items: center; gap: 8px;
+    pointer-events: none;
+  }
+  .toast {
+    display: flex; align-items: center; gap: 9px;
+    background: var(--surface-1); border: 1px solid var(--border-hi); border-radius: 5px;
+    padding: 12px 16px; font-size: 14.5px; color: var(--text-primary);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    opacity: 0; transform: translateY(12px); transition: opacity .2s, transform .2s;
+    max-width: calc(100vw - 32px);
+  }
+  .toast.show { opacity: 1; transform: none; }
+  .toast .ic { font-size: 16px; }
+  .toast.ok .ic { color: var(--cyan); }
+  .toast.err { border-color: var(--red); }
+  .toast.err .ic { color: var(--red); }
+  .toast.info .ic { color: var(--amber); }
+
+  /* ---------------- Help overlay ---------------- */
+  .help {
+    position: fixed; inset: 0; z-index: 1100; display: none;
+    background: var(--scrim); backdrop-filter: blur(4px);
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  .help.active { display: flex; }
+  .help-box {
+    background: var(--surface-1); border: 1px solid var(--border-hi); border-radius: 8px;
+    padding: 22px 24px; max-width: 400px; width: 100%;
+  }
+  .help-box h3 { font-family: var(--font-display); font-size: 14px; letter-spacing: 0.08em;
+    text-transform: uppercase; margin: 0 0 14px; color: var(--cyan); }
+  .help-box dl { display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; margin: 0; font-size: 14.5px; }
+  .help-box dt { text-align: right; }
+  .help-box kbd {
+    font-family: ui-monospace, monospace; font-size: 13px;
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: 3px; padding: 2px 7px;
+    color: var(--text-primary);
+  }
+  .help-box dd { margin: 0; color: var(--text-secondary); }
+
+  .backdrop {
+    display: none; position: fixed; inset: 0; z-index: 45;
+    background: var(--scrim); backdrop-filter: blur(2px);
+  }
+
+  /* ---------------- Mobile ---------------- */
+  @media (max-width: 900px) {
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
+      width: min(320px, 86vw); height: 100%;
+      transform: translateX(-102%); transition: transform .22s ease;
+      padding-top: calc(18px + env(safe-area-inset-top));
+    }
+    body.nav-open .sidebar { transform: none; }
+    body.nav-open .backdrop { display: block; }
+    .sidebar-close { display: inline-flex; }
+    .menu-btn { display: inline-flex; }
+    .seg .lbl { display: none; }
+    .search { order: 3; flex-basis: 100%; }
+    .vitals { grid-template-columns: repeat(2, 1fr); }
+    .grid { grid-template-columns: 1fr; gap: 14px; }
+    /* grid view = big immersive cards; list view = compact scannable rows */
+    .grid.list { gap: 9px; }
+    .grid.list .card { flex-direction: row; align-items: stretch; }
+    .grid.list .thumb { width: 42%; max-width: 168px; min-width: 122px; flex: none; }
+    .grid.list .thumb .play { width: 38px; height: 38px; font-size: 14px; }
+    .grid.list .body { flex: 1; min-width: 0; padding: 9px 11px; gap: 4px; }
+    .grid.list .tag { font-size: 11.5px; }
+    .grid.list .vtitle { font-size: 13.5px; line-height: 1.32; -webkit-line-clamp: 3; }
+    .grid.list .vmeta { font-size: 11.5px; }
+    .grid.list .act.wide { display: none; }
+    .grid.list .act { width: 34px; height: 32px; font-size: 13px; }
+    .grid.list .vactions { gap: 6px; margin-top: 2px; }
+    .content { padding-left: 14px; padding-right: 14px; }
+    .vitals-panel { margin-left: 14px; margin-right: 14px; }
+    .topbar { padding-left: 14px; padding-right: 14px; }
+  }
+  @media (max-width: 420px) {
+    .vitals { grid-template-columns: 1fr 1fr; }
+    .vital .v { font-size: 22px; }
+  }
+</style>
+</head>
 <body>
 
-    <!-- Toast Notification Container -->
-    <div id="toast-container"></div>
+<div id="toasts"></div>
+<div class="backdrop" onclick="closeNav()"></div>
 
-    <!-- Mobile Sidebar Backdrop -->
-    <div id="sidebar-backdrop" class="sidebar-backdrop" onclick="closeSidebar()"></div>
-
-    <div class="app-container">
-        <!-- Sidebar -->
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <div class="logo">
-                    <img class="suite-logo" src="{{ base_path }}/static/logo.svg" alt="">
-                    <i class="fa-brands fa-youtube logo-icon"></i>
-                    <span>YouTube Dashboard</span>
-                </div>
-                <button class="sidebar-close-btn" onclick="closeSidebar()" aria-label="Close menu">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
-            </div>
-
-            <!-- Add Channel Form -->
-            <div class="subscribe-box">
-                <h3>Subscribe to Channel</h3>
-                <form id="subscribe-form" onsubmit="subscribeChannel(event)">
-                    <div class="input-group">
-                        <i class="fa-solid fa-link input-icon"></i>
-                        <input type="text" id="channel-input" placeholder="Channel URL, Handle, or ID" required>
-                    </div>
-                    <button type="submit" class="btn btn-primary btn-full">
-                        <i class="fa-solid fa-plus"></i> Subscribe
-                    </button>
-                </form>
-            </div>
-
-            <div class="sidebar-actions">
-                <button class="btn btn-secondary btn-full" onclick="pollAllChannels(this)">
-                    <i class="fa-solid fa-rotate sync-icon"></i> Refresh All Feeds
-                </button>
-            </div>
-
-            <!-- Subscribed Channels List -->
-            <div class="channel-section">
-                <h3>Subscriptions ({{ channels|length }})</h3>
-                <ul class="channel-list">
-                    <li class="{% if not active_channel_id %}active{% endif %}">
-                        <a
-                            href="{{ base_path }}/?filter_type={{ active_filter | urlencode }}{% if search_query %}&q={{ search_query | urlencode }}{% endif %}">
-                            <i class="fa-solid fa-globe channel-icon"></i>
-                            <span class="channel-title-span">All Subscriptions</span>
-                        </a>
-                    </li>
-                    {% for channel in channels %}
-                    <li class="channel-item-row {% if active_channel_id == channel.channel_id %}active{% endif %}"
-                        data-channel-id="{{ channel.channel_id }}">
-                        <a
-                            href="{{ base_path }}/?channel_id={{ channel.channel_id | urlencode }}&filter_type={{ active_filter | urlencode }}{% if search_query %}&q={{ search_query | urlencode }}{% endif %}">
-                            {% if channel.thumbnail_url %}
-                            <img src="{{ channel.thumbnail_url }}" alt="" class="channel-avatar">
-                            {% else %}
-                            <div class="channel-avatar-placeholder">
-                                {{ channel.title[0] | upper }}
-                            </div>
-                            {% endif %}
-                            <span class="channel-title-span" title="{{ channel.title }}">{{ channel.title }}</span>
-                        </a>
-                        <button class="btn-unsubscribe"
-                            data-channel-id="{{ channel.channel_id }}"
-                            data-channel-title="{{ channel.title }}"
-                            onclick="confirmUnsubscribe(event, this)"
-                            title="Unsubscribe">
-                            <i class="fa-solid fa-trash-can"></i>
-                        </button>
-                    </li>
-                    {% endfor %}
-                </ul>
-            </div>
-        </aside>
-
-        <!-- Main Content Area -->
-        <main class="main-content">
-            <!-- Header Filter Bar -->
-            <header class="content-header">
-                <button class="mobile-menu-btn" onclick="toggleSidebar()" aria-label="Toggle sidebar">
-                    <i class="fa-solid fa-bars"></i>
-                </button>
-                <div class="search-box">
-                    <form action="{{ base_path }}/" method="GET" class="search-form">
-                        {% if active_channel_id %}
-                        <input type="hidden" name="channel_id" value="{{ active_channel_id }}">
-                        {% endif %}
-                        <input type="hidden" name="filter_type" value="{{ active_filter }}">
-                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
-                        <input type="text" name="q" placeholder="Search videos..." value="{{ search_query }}">
-                        {% if search_query %}
-                        <a href="{{ base_path }}/?{% if active_channel_id %}channel_id={{ active_channel_id | urlencode }}&{% endif %}filter_type={{ active_filter | urlencode }}"
-                            class="search-clear" title="Clear Search">
-                            <i class="fa-solid fa-xmark"></i>
-                        </a>
-                        {% endif %}
-                    </form>
-                </div>
-
-                <div class="filter-pills">
-                    <a href="{{ base_path }}/?{% if active_channel_id %}channel_id={{ active_channel_id | urlencode }}&{% endif %}filter_type=unwatched{% if search_query %}&q={{ search_query | urlencode }}{% endif %}"
-                        class="filter-pill {% if active_filter == 'unwatched' %}active{% endif %}">
-                        <i class="fa-solid fa-eye-slash"></i> <span>Unwatched</span>
-                    </a>
-                    <a href="{{ base_path }}/?{% if active_channel_id %}channel_id={{ active_channel_id | urlencode }}&{% endif %}filter_type=bookmarked{% if search_query %}&q={{ search_query | urlencode }}{% endif %}"
-                        class="filter-pill {% if active_filter == 'bookmarked' %}active{% endif %}">
-                        <i class="fa-solid fa-bookmark"></i> <span>Bookmarks</span>
-                    </a>
-                    <a href="{{ base_path }}/?{% if active_channel_id %}channel_id={{ active_channel_id | urlencode }}&{% endif %}filter_type=all{% if search_query %}&q={{ search_query | urlencode }}{% endif %}"
-                        class="filter-pill {% if active_filter == 'all' %}active{% endif %}">
-                        <i class="fa-solid fa-list"></i> <span>All</span>
-                    </a>
-                </div>
-
-                <div class="view-toggle" role="group" aria-label="Video display mode">
-                    <button type="button" class="view-toggle-btn" data-view="grid" onclick="setViewMode('grid')"
-                        title="Grid view">
-                        <i class="fa-solid fa-grip"></i>
-                    </button>
-                    <button type="button" class="view-toggle-btn" data-view="list" onclick="setViewMode('list')"
-                        title="List view">
-                        <i class="fa-solid fa-list-ul"></i>
-                    </button>
-                </div>
-            </header>
-
-            <!-- Video Grid -->
-            <section class="video-grid-container">
-                {% if videos|length == 0 %}
-                <div class="empty-state">
-                    <i class="fa-solid fa-clapperboard empty-icon"></i>
-                    <h2>No videos found</h2>
-                    <p>No videos match your current filters or search parameters. Subscriptions poll automatically in
-                        the background!</p>
-                </div>
-                {% else %}
-                <div class="video-grid">
-                    {% for video in videos %}
-                    <article class="video-card" id="video-{{ video.video_id }}" data-video-id="{{ video.video_id }}">
-                        <div class="thumbnail-wrapper" onclick="watchVideo('{{ video.video_id }}')">
-                            <img src="{{ video.thumbnail_url }}" alt="{{ video.title }}" loading="lazy">
-                            <span class="play-overlay">
-                                <i class="fa-solid fa-play"></i>
-                            </span>
-                        </div>
-                        <div class="video-details">
-                            <span class="video-channel-tag">{{ video.channel.title if video.channel else "YouTube
-                                Channel" }}</span>
-                            <h3 class="video-title" title="{{ video.title }}"
-                                onclick="watchVideo('{{ video.video_id }}')">
-                                {{ video.title }}
-                            </h3>
-                            <p class="video-meta">
-                                <i class="fa-regular fa-clock"></i> {{ video.published_at.strftime('%b %d, %Y') }}
-                            </p>
-                            <div class="video-actions">
-                                <button class="action-btn watch-btn" onclick="watchVideo('{{ video.video_id }}')"
-                                    title="Watch Video">
-                                    <i class="fa-solid fa-play"></i> Watch
-                                </button>
-
-                                <button
-                                    class="action-btn toggle-watched-btn {% if video.is_watched %}watched{% endif %}"
-                                    onclick="toggleWatched('{{ video.video_id }}', this)"
-                                    title="{% if video.is_watched %}Mark Unwatched{% else %}Mark Watched{% endif %}">
-                                    <i
-                                        class="fa-solid {% if video.is_watched %}fa-eye{% else %}fa-eye-slash{% endif %}"></i>
-                                </button>
-
-                                <button
-                                    class="action-btn toggle-bookmark-btn {% if video.is_bookmarked %}bookmarked{% endif %}"
-                                    onclick="toggleBookmark('{{ video.video_id }}', this)"
-                                    title="{% if video.is_bookmarked %}Remove Bookmark{% else %}Bookmark{% endif %}">
-                                    <i class="fa-solid fa-bookmark"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </article>
-                    {% endfor %}
-                </div>
-                {% endif %}
-            </section>
-        </main>
+<div class="app">
+  <!-- ============ Sidebar ============ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <img src="{{ base_path }}/static/logo.svg" alt="">
+      <span class="name">YT&nbsp;<b>RELAY</b></span>
+      <button class="sidebar-close" onclick="closeNav()" aria-label="Close menu">&times;</button>
     </div>
+    <div class="brand-sub">tailnet feed relay</div>
 
-    <!-- Video Modal Player -->
-    <div id="video-modal" class="modal-overlay" onclick="closeVideoModal(event)">
-        <div class="modal-content" onclick="event.stopPropagation()">
-            <button class="modal-close" onclick="closeVideoModal()"><i class="fa-solid fa-xmark"></i></button>
-            <div class="video-player-container">
-                <iframe id="youtube-player" src="" frameborder="0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowfullscreen></iframe>
-            </div>
-            <h3 id="modal-video-title" class="modal-video-title">Video Title</h3>
+    <div class="subscribe">
+      <h3>Subscribe</h3>
+      <form id="sub-form" onsubmit="subscribe(event)">
+        <div class="field">
+          <svg class="ic"><use href="#i-link"/></svg>
+          <input type="text" id="sub-input" placeholder="Channel URL, @handle, or UC… ID" required>
         </div>
+        <button type="submit" class="btn primary full" id="sub-btn">
+          <svg class="ic"><use href="#i-plus"/></svg> Add channel
+        </button>
+      </form>
     </div>
 
-    <!-- Javascript Handlers -->
-    <script>
-        // External mount prefix (e.g. "/youtube-dashboard") when served behind
-        // tailscale serve --set-path, which strips it before it reaches the app.
-        const BASE_PATH = "{{ base_path }}";
+    <div class="sidebar-actions">
+      <button class="btn full" onclick="pollAll(this)" id="poll-all-btn">
+        <svg class="ic"><use href="#i-refresh"/></svg> Refresh all feeds
+      </button>
+      <button class="btn ghost full" onclick="markAllWatched(this)">
+        <svg class="ic"><use href="#i-check"/></svg> Mark {{ 'channel' if active_channel_id else 'all' }} watched
+      </button>
+    </div>
 
-        // Sidebar collapse/drawer toggle (desktop: collapses inline, mobile: opens as a drawer)
-        function toggleSidebar() {
-            document.body.classList.toggle("sidebar-toggled");
-        }
+    <div class="subs">
+      <h3>Subscriptions <span class="count">({{ channels|length }})</span></h3>
+      <ul class="chan-list">
+        <li class="chan {% if not active_channel_id %}active{% endif %}">
+          <a href="{{ base_path }}/?filter_type={{ active_filter|urlencode }}&sort={{ active_sort }}&range={{ active_range }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}">
+            <span class="avatar-ph"><svg class="ic"><use href="#i-globe"/></svg></span>
+            <span class="cname">All subscriptions</span>
+          </a>
+          {% set total_unwatched = unwatched_counts.values()|sum %}
+          {% if total_unwatched %}<span class="pill">{{ total_unwatched }}</span>{% endif %}
+        </li>
+        {% for channel in channels %}
+        {% set uc = unwatched_counts.get(channel.channel_id, 0) %}
+        {% set stale = channel.last_polled_at and (now_utc - channel.last_polled_at).total_seconds() > stats.poll_interval_seconds * 3 %}
+        <li class="chan {% if active_channel_id == channel.channel_id %}active{% endif %}" data-channel-id="{{ channel.channel_id }}">
+          <a href="{{ base_path }}/?channel_id={{ channel.channel_id|urlencode }}&filter_type={{ active_filter|urlencode }}&sort={{ active_sort }}&range={{ active_range }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}">
+            {% if channel.thumbnail_url %}
+            <img class="avatar" src="{{ channel.thumbnail_url }}" alt="" loading="lazy">
+            {% else %}
+            <span class="avatar-ph">{{ channel.title[0]|upper }}</span>
+            {% endif %}
+            <span class="cname" title="{{ channel.title }}">{{ channel.title }}</span>
+          </a>
+          {% if channel.last_poll_ok == false %}
+          <span class="warn err" title="Last poll failed: {{ channel.last_poll_error }}"><svg class="ic"><use href="#i-warn"/></svg></span>
+          {% elif stale %}
+          <span class="warn" title="Feed looks stale — last polled {{ channel.last_polled_at.strftime('%b %d %H:%M') }} UTC"><svg class="ic"><use href="#i-warn"/></svg></span>
+          {% endif %}
+          {% if uc %}<span class="pill">{{ uc }}</span>{% endif %}
+          <button class="kill" title="Unsubscribe"
+                  data-channel-id="{{ channel.channel_id }}" data-channel-title="{{ channel.title }}"
+                  onclick="unsubscribe(event, this)"><svg class="ic"><use href="#i-trash"/></svg></button>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </aside>
 
-        function closeSidebar() {
-            document.body.classList.remove("sidebar-toggled");
-        }
+  <!-- ============ Main ============ -->
+  <div class="main">
+    <div class="topbar">
+      <button class="menu-btn" onclick="openNav()" aria-label="Open menu"><svg class="ic"><use href="#i-menu"/></svg></button>
 
-        // Grid / List video view toggle (persisted across page loads)
-        function setViewMode(mode) {
-            const grid = document.querySelector(".video-grid");
-            if (grid) {
-                grid.classList.toggle("list-view", mode === "list");
-            }
-            document.querySelectorAll(".view-toggle-btn").forEach((btn) => {
-                btn.classList.toggle("active", btn.dataset.view === mode);
-            });
-            localStorage.setItem("videoViewMode", mode);
-        }
+      <form class="search" action="{{ base_path }}/" method="GET">
+        {% if active_channel_id %}<input type="hidden" name="channel_id" value="{{ active_channel_id }}">{% endif %}
+        <input type="hidden" name="filter_type" value="{{ active_filter }}">
+        <input type="hidden" name="sort" value="{{ active_sort }}">
+        <input type="hidden" name="range" value="{{ active_range }}">
+        <svg class="ic"><use href="#i-search"/></svg>
+        <input type="text" name="q" id="search-input" placeholder="Search videos…" value="{{ search_query }}" autocomplete="off">
+        {% if search_query %}
+        <a class="clear" title="Clear"
+           href="{{ base_path }}/?{% if active_channel_id %}channel_id={{ active_channel_id|urlencode }}&{% endif %}filter_type={{ active_filter|urlencode }}&sort={{ active_sort }}&range={{ active_range }}"><svg class="ic"><use href="#i-x"/></svg></a>
+        {% endif %}
+      </form>
 
-        setViewMode(localStorage.getItem("videoViewMode") || "grid");
+      {% macro q(ft=None, so=None, rg=None) -%}
+        {{ base_path }}/?{% if active_channel_id %}channel_id={{ active_channel_id|urlencode }}&{% endif %}filter_type={{ (ft or active_filter)|urlencode }}&sort={{ so or active_sort }}&range={{ rg or active_range }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}
+      {%- endmacro %}
 
-        // Toast Notification System
-        function showToast(message, type = "success") {
-            const container = document.getElementById("toast-container");
-            const toast = document.createElement("div");
-            toast.className = `toast toast-${type}`;
+      <div class="seg" role="group" aria-label="Status filter">
+        <a href="{{ q(ft='unwatched') }}" class="{% if active_filter=='unwatched' %}active{% endif %}"><svg class="ic"><use href="#i-eye-off"/></svg><span class="lbl">Unwatched</span></a>
+        <a href="{{ q(ft='bookmarked') }}" class="{% if active_filter=='bookmarked' %}active{% endif %}"><svg class="ic"><use href="#i-mark"/></svg><span class="lbl">Saved</span></a>
+        <a href="{{ q(ft='all') }}" class="{% if active_filter=='all' %}active{% endif %}"><svg class="ic"><use href="#i-list"/></svg><span class="lbl">All</span></a>
+      </div>
 
-            let icon = "fa-circle-check";
-            if (type === "error") icon = "fa-circle-exclamation";
-            if (type === "info") icon = "fa-circle-info";
+      <div class="seg" role="group" aria-label="Time range">
+        <a href="{{ q(rg='today') }}" class="{% if active_range=='today' %}active{% endif %}">24h</a>
+        <a href="{{ q(rg='week') }}" class="{% if active_range=='week' %}active{% endif %}">7d</a>
+        <a href="{{ q(rg='month') }}" class="{% if active_range=='month' %}active{% endif %}">30d</a>
+        <a href="{{ q(rg='all') }}" class="{% if active_range=='all' %}active{% endif %}">All</a>
+      </div>
 
-            toast.innerHTML = `
-                <i class="fa-solid ${icon}"></i>
-                <span>${message}</span>
-            `;
-            container.appendChild(toast);
+      <div class="seg" role="group" aria-label="Sort order">
+        <a class="sort-toggle {% if active_sort == 'oldest' %}asc{% endif %}"
+           href="{{ q(so='oldest' if active_sort == 'newest' else 'newest') }}"
+           title="Sorted {{ 'newest first — tap for oldest first' if active_sort == 'newest' else 'oldest first — tap for newest first' }}">
+          <svg class="ic"><use href="#i-sort"/></svg>
+          <span class="lbl">{{ 'Newest' if active_sort == 'newest' else 'Oldest' }}</span>
+        </a>
+      </div>
 
-            setTimeout(() => {
-                toast.classList.add("show");
-            }, 10);
+      <div class="seg" role="group" aria-label="View mode">
+        <button type="button" data-view="grid" onclick="setView('grid')"><svg class="ic"><use href="#i-grid"/></svg></button>
+        <button type="button" data-view="list" onclick="setView('list')"><svg class="ic"><use href="#i-rows"/></svg></button>
+      </div>
 
-            setTimeout(() => {
-                toast.classList.remove("show");
-                setTimeout(() => toast.remove(), 300);
-            }, 4000);
-        }
+      <button class="icon-btn theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle theme">
+        <svg class="ic i-moon"><use href="#i-moon"/></svg>
+        <svg class="ic i-sun"><use href="#i-sun"/></svg>
+      </button>
+    </div>
 
-        // Watch Video in Modal
-        function watchVideo(videoId) {
-            const modal = document.getElementById("video-modal");
-            const iframe = document.getElementById("youtube-player");
-            const titleEl = document.getElementById("modal-video-title");
+    <details class="vitals-panel" id="vitals-panel">
+      <summary class="vitals-summary">
+        <svg class="ic chev"><use href="#i-chev"/></svg>
+        <span class="vs-label">Feed Vitals</span>
+        <span class="vs-badge" data-vital="unwatched" title="unwatched">{{ stats.unwatched }}</span>
+      </summary>
+      <div class="vitals" id="vitals">
+        {% set v = stats %}
+        <div class="vital"><div class="k">Subscriptions</div><div class="v">{{ v.channels }}</div></div>
+        <div class="vital"><div class="k">Unwatched</div><div class="v accent" data-vital="unwatched">{{ v.unwatched }}</div><div class="s">in the inbox</div></div>
+        <div class="vital"><div class="k">Saved</div><div class="v" data-vital="bookmarked">{{ v.bookmarked }}</div></div>
+        <div class="vital"><div class="k">New · 7d</div><div class="v" data-vital="added_this_week">{{ v.added_this_week }}</div></div>
+        <div class="vital"><div class="k">Last poll</div><div class="v" style="font-size:17px" data-vital="last_poll" data-ts="{{ v.last_polled_at or '' }}">—</div><div class="s" data-vital="next_poll">every {{ (v.poll_interval_seconds // 60) }}m</div></div>
+        <div class="vital"><div class="k">Feed health</div><div class="v {% if v.errored_feeds %}bad{% elif v.never_polled %}warn{% endif %}" data-vital="errored_feeds">{% if v.errored_feeds %}{{ v.errored_feeds }} down{% else %}OK{% endif %}</div>{% if v.never_polled %}<div class="s">{{ v.never_polled }} never polled</div>{% endif %}</div>
+      </div>
+    </details>
 
-            const card = document.getElementById(`video-${videoId}`);
-            const title = card ? card.querySelector(".video-title").getAttribute("title") : "";
+    <div class="content">
+      {% if videos|length == 0 %}
+      <div class="empty">
+        <svg class="ic"><use href="#i-film"/></svg>
+        <h2>Nothing here</h2>
+        <p>No videos match this filter. Feeds poll automatically in the background — check back, or hit “Refresh all feeds”.</p>
+      </div>
+      {% else %}
+      <div class="grid" id="grid">
+        {% for video in videos %}
+        <article class="card{% if video.is_watched %} watched{% endif %}" id="v-{{ video.video_id }}"
+                 data-video-id="{{ video.video_id }}" data-title="{{ video.title }}" data-watched="{{ '1' if video.is_watched else '0' }}">
+          <div class="thumb" onclick="watch('{{ video.video_id }}')">
+            <img src="{{ video.thumbnail_url }}" alt="" loading="lazy">
+            <span class="play"><svg class="ic"><use href="#i-play"/></svg></span>
+          </div>
+          <div class="body">
+            <div class="tag">{{ video.channel.title if video.channel else 'YouTube' }}</div>
+            <div class="vtitle" title="{{ video.title }}" onclick="watch('{{ video.video_id }}')">{{ video.title }}</div>
+            <div class="vmeta">
+              <svg class="ic"><use href="#i-clock"/></svg>
+              <span class="rel" data-ts="{{ video.published_at.isoformat() }}Z" title="{{ video.published_at.strftime('%b %d, %Y') }}">{{ video.published_at.strftime('%b %d, %Y') }}</span>
+            </div>
+            <div class="vactions">
+              <button class="act wide" onclick="watch('{{ video.video_id }}')"><svg class="ic"><use href="#i-play"/></svg> Watch</button>
+              <button class="act toggle-watch {% if video.is_watched %}on-watch{% endif %}"
+                      title="Toggle watched" onclick="toggleWatched('{{ video.video_id }}', this)">
+                <svg class="ic"><use href="{% if video.is_watched %}#i-eye{% else %}#i-eye-off{% endif %}"/></svg>
+              </button>
+              <button class="act toggle-mark {% if video.is_bookmarked %}on-mark{% endif %}"
+                      title="Toggle saved" onclick="toggleMark('{{ video.video_id }}', this)">
+                <svg class="ic"><use href="#i-mark"/></svg>
+              </button>
+            </div>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
 
-            iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
-            titleEl.textContent = title;
-            modal.classList.add("active");
+<!-- ============ Video modal ============ -->
+<div class="modal" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-inner">
+    <div class="modal-bar">
+      <span class="mt">Now playing</span>
+      <button class="modal-close" onclick="closeModal()" aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="player"><iframe id="yt-frame" src="" allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></div>
+    <h3 class="modal-title" id="modal-title">—</h3>
+  </div>
+</div>
 
-            // Automatically mark video as watched in background
-            const videoCard = document.getElementById(`video-${videoId}`);
-            if (videoCard) {
-                const watchedBtn = videoCard.querySelector(".toggle-watched-btn");
-                if (watchedBtn && !watchedBtn.classList.contains("watched")) {
-                    updateVideoState(videoId, { is_watched: true }, watchedBtn);
-                }
-            }
-        }
+<!-- ============ Help overlay ============ -->
+<div class="help" id="help" onclick="if(event.target===this)toggleHelp()">
+  <div class="help-box">
+    <h3>Keyboard</h3>
+    <dl>
+      <dt><kbd>j</kbd> / <kbd>k</kbd></dt><dd>Next / previous video</dd>
+      <dt><kbd>o</kbd> / <kbd>Enter</kbd></dt><dd>Open selected</dd>
+      <dt><kbd>w</kbd></dt><dd>Toggle watched</dd>
+      <dt><kbd>b</kbd></dt><dd>Toggle saved</dd>
+      <dt><kbd>/</kbd></dt><dd>Focus search</dd>
+      <dt><kbd>r</kbd></dt><dd>Refresh all feeds</dd>
+      <dt><kbd>g</kbd></dt><dd>Grid / list view</dd>
+      <dt><kbd>?</kbd></dt><dd>This help</dd>
+    </dl>
+  </div>
+</div>
 
-        function closeVideoModal(e) {
-            const modal = document.getElementById("video-modal");
-            const iframe = document.getElementById("youtube-player");
-            iframe.src = "";
-            modal.classList.remove("active");
-        }
+<!-- ============ Icon sprite ============ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10.6 13.4a1 1 0 0 0 1.4 0l5-5a3 3 0 0 0-4.2-4.2l-2 2a1 1 0 0 0 1.4 1.4l2-2a1 1 0 0 1 1.4 1.4l-5 5a1 1 0 0 0 0 1.4Zm2.8-2.8a1 1 0 0 0-1.4 0l-5 5a3 3 0 0 0 4.2 4.2l2-2a1 1 0 1 0-1.4-1.4l-2 2a1 1 0 0 1-1.4-1.4l5-5a1 1 0 0 0 0-1.4Z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M12 6V3L8 7l4 4V8a4 4 0 1 1-4 4H6a6 6 0 1 0 6-6Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm6.9 6h-3a15 15 0 0 0-1.2-3.6A8 8 0 0 1 18.9 8ZM12 4c.8 1.1 1.5 2.5 1.9 4h-3.8c.4-1.5 1.1-2.9 1.9-4ZM4.3 14a8 8 0 0 1 0-4h3.4a17 17 0 0 0 0 4Zm.8 2h3a15 15 0 0 0 1.2 3.6A8 8 0 0 1 5.1 16Zm3-8h-3a8 8 0 0 1 4.2-3.6A15 15 0 0 0 8.1 8ZM12 20c-.8-1.1-1.5-2.5-1.9-4h3.8c-.4 1.5-1.1 2.9-1.9 4Zm2.3-6H9.7a15 15 0 0 1 0-4h4.6a15 15 0 0 1 0 4Zm.6 5.6a15 15 0 0 0 1.2-3.6h3a8 8 0 0 1-4.2 3.6Zm1.6-5.6a17 17 0 0 0 0-4h3.4a8 8 0 0 1 0 4Z"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21Zm12-3h-2v-2h2Zm0-4h-2v-4h2Z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M6 7h12l-1 14H7L6 7Zm9-3 1 2H8l1-2h6Z"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><path d="M10 4a6 6 0 1 0 3.7 10.7l4.8 4.8 1.4-1.4-4.8-4.8A6 6 0 0 0 10 4Zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="m6.4 5 12.6 12.6-1.4 1.4L5 6.4 6.4 5Zm12.6 1.4L6.4 19 5 17.6 17.6 5 19 6.4Z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M12 5C6 5 2 12 2 12s4 7 10 7 10-7 10-7-4-7-10-7Zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm0-2a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></symbol>
+  <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M2 4.3 3.3 3 21 20.7 19.7 22l-3-3A11.6 11.6 0 0 1 12 20C6 20 2 13 2 13a20 20 0 0 1 4.5-5.2L2 4.3Zm6 6.4a4 4 0 0 0 5.3 5.3L8 10.7Zm4-2.7c3 0 4 2.7 4 2.7a4 4 0 0 1-.5 1.9l1.5 1.5A20 20 0 0 0 22 12s-4-7-10-7a11 11 0 0 0-2.4.3l1.6 1.6c.2 0 .5-.2.8-.2Z"/></symbol>
+  <symbol id="i-mark" viewBox="0 0 24 24"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><path d="M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z"/></symbol>
+  <symbol id="i-rows" viewBox="0 0 24 24"><path d="M3 4h18v6H3zm0 10h18v6H3z"/></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path d="M3 5h12v2H3zm0 6h8v2H3zm0 6h5v2H3zm15.5 1.5L14 13h3V5h2v8h3z"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 10V6h-2v8h6v-2z"/></symbol>
+  <symbol id="i-film" viewBox="0 0 24 24"><path d="M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm2 2v2h2V5Zm10 0v2h2V5ZM6 11v2h2v-2Zm10 0v2h2v-2ZM6 17v2h2v-2Zm10 0v2h2v-2Zm-6-6h4v2h-4z"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9c0-.5 0-1-.1-1.4A7 7 0 0 1 12 3Z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm-1-6h2v3h-2Zm0 17h2v3h-2ZM2 11h3v2H2Zm17 0h3v2h-3ZM4.2 5.6l1.4-1.4 2.1 2.1-1.4 1.4Zm12.1 12.1 1.4-1.4 2.1 2.1-1.4 1.4Zm2.1-13.5 1.4 1.4-2.1 2.1-1.4-1.4ZM4.2 18.4l2.1-2.1 1.4 1.4-2.1 2.1Z"/></symbol>
+</svg>
 
-        // Toggle Watched status via API
-        async function toggleWatched(videoId, btnElement) {
-            const currentlyWatched = btnElement.classList.contains("watched");
-            const nextState = !currentlyWatched;
+<script>
+  const BASE_PATH = "{{ base_path }}";
+  const ACTIVE_FILTER = "{{ active_filter }}";
+  const ACTIVE_CHANNEL = {{ ('"' + active_channel_id + '"') if active_channel_id else 'null' }};
 
-            btnElement.disabled = true;
-            const success = await updateVideoState(videoId, { is_watched: nextState }, btnElement);
-            btnElement.disabled = false;
+  /* ---------- helpers ---------- */
+  function esc(s){ return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
-            if (success) {
-                // If the active filter is unwatched, fade out and remove card
-                const activeFilter = "{{ active_filter }}";
-                if (activeFilter === "unwatched" && nextState === true) {
-                    const card = document.getElementById(`video-${videoId}`);
-                    if (card) {
-                        card.style.transform = "scale(0.95)";
-                        card.style.opacity = "0";
-                        setTimeout(() => {
-                            card.remove();
-                            // Check if feed is empty now
-                            const grid = document.querySelector(".video-grid");
-                            if (grid && grid.children.length === 0) {
-                                location.reload();
-                            }
-                        }, 300);
-                    }
-                }
-            }
-        }
+  function relTime(iso){
+    const d = new Date(iso), s = (Date.now() - d.getTime())/1000;
+    if (isNaN(s)) return "";
+    if (s < 45) return "just now";
+    if (s < 3600) return Math.max(1,Math.floor(s/60)) + "m ago";
+    if (s < 86400) return Math.floor(s/3600) + "h ago";
+    if (s < 604800) return Math.floor(s/86400) + "d ago";
+    if (s < 2629800) return Math.floor(s/604800) + "w ago";
+    return d.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
+  }
+  function paintRelTimes(root=document){
+    root.querySelectorAll(".rel[data-ts]").forEach(el => { el.textContent = relTime(el.dataset.ts); });
+  }
+  paintRelTimes();
+  setInterval(paintRelTimes, 60000);
 
-        // Toggle Bookmark status via API
-        async function toggleBookmark(videoId, btnElement) {
-            const currentlyBookmarked = btnElement.classList.contains("bookmarked");
-            const nextState = !currentlyBookmarked;
+  /* ---------- nav drawer ---------- */
+  function openNav(){ document.body.classList.add("nav-open"); }
+  function closeNav(){ document.body.classList.remove("nav-open"); }
 
-            btnElement.disabled = true;
-            const success = await updateVideoState(videoId, { is_bookmarked: nextState }, btnElement);
-            btnElement.disabled = false;
+  /* ---------- theme ---------- */
+  function toggleTheme(){
+    const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("yt-relay-theme", next);
+    document.querySelector('meta[name="theme-color"]').setAttribute("content", next === "light" ? "#f4f6f7" : "#06080a");
+  }
 
-            if (success) {
-                const activeFilter = "{{ active_filter }}";
-                if (activeFilter === "bookmarked" && nextState === false) {
-                    const card = document.getElementById(`video-${videoId}`);
-                    if (card) {
-                        card.style.transform = "scale(0.95)";
-                        card.style.opacity = "0";
-                        setTimeout(() => {
-                            card.remove();
-                            const grid = document.querySelector(".video-grid");
-                            if (grid && grid.children.length === 0) {
-                                location.reload();
-                            }
-                        }, 300);
-                    }
-                }
-            }
-        }
+  /* ---------- view mode ---------- */
+  function setView(mode){
+    const g = document.getElementById("grid");
+    if (g) g.classList.toggle("list", mode === "list");
+    document.querySelectorAll('.seg [data-view]').forEach(b => b.classList.toggle("active", b.dataset.view === mode));
+    localStorage.setItem("yt-relay-view", mode);
+  }
+  setView(localStorage.getItem("yt-relay-view") || "grid");
 
-        // Update video state fetch call
-        async function updateVideoState(videoId, data, btnElement) {
-            try {
-                const res = await fetch(`${BASE_PATH}/api/videos/${videoId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
+  /* ---------- collapsible Feed Vitals (collapsed by default) ---------- */
+  (function initVitals(){
+    const vp = document.getElementById("vitals-panel");
+    if (!vp) return;
+    if (localStorage.getItem("yt-relay-vitals") === "open") vp.open = true;
+    vp.addEventListener("toggle", () => {
+      localStorage.setItem("yt-relay-vitals", vp.open ? "open" : "closed");
+    });
+  })();
 
-                if (!res.ok) {
-                    const err = await res.json();
-                    showToast(err.detail || "Failed to update video", "error");
-                    return false;
-                }
+  /* ---------- toast ---------- */
+  function toast(msg, kind="ok"){
+    const el = document.createElement("div");
+    el.className = "toast " + kind;
+    const ic = kind === "err" ? "i-warn" : kind === "info" ? "i-warn" : "i-check";
+    el.innerHTML = `<svg class="ic"><use href="#${ic}"/></svg><span>${esc(msg)}</span>`;
+    document.getElementById("toasts").appendChild(el);
+    requestAnimationFrame(() => el.classList.add("show"));
+    setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 250); }, 3800);
+  }
 
-                const updated = await res.json();
+  /* ---------- video player (cinema mode) ---------- */
+  const modalEl = document.getElementById("modal");
 
-                if (data.is_watched !== undefined) {
-                    if (updated.is_watched) {
-                        btnElement.classList.add("watched");
-                        btnElement.title = "Mark Unwatched";
-                        btnElement.innerHTML = '<i class="fa-solid fa-eye"></i>';
-                        showToast("Marked as watched");
-                    } else {
-                        btnElement.classList.remove("watched");
-                        btnElement.title = "Mark Watched";
-                        btnElement.innerHTML = '<i class="fa-solid fa-eye-slash"></i>';
-                        showToast("Marked as unwatched", "info");
-                    }
-                }
+  // Auto-hide our close button ~1.8s after the last interaction so it isn't
+  // sitting on top of the video. Tap anywhere on the shell to bring it back.
+  let chromeTimer = null;
+  function pokeChrome(){
+    if (!modalEl.classList.contains("cinema")) return;
+    modalEl.classList.remove("chrome-hidden");
+    clearTimeout(chromeTimer);
+    chromeTimer = setTimeout(() => modalEl.classList.add("chrome-hidden"), 1800);
+  }
+  modalEl.addEventListener("pointerdown", pokeChrome);
 
-                if (data.is_bookmarked !== undefined) {
-                    if (updated.is_bookmarked) {
-                        btnElement.classList.add("bookmarked");
-                        btnElement.title = "Remove Bookmark";
-                        showToast("Added to bookmarks");
-                    } else {
-                        btnElement.classList.remove("bookmarked");
-                        btnElement.title = "Bookmark";
-                        showToast("Removed from bookmarks", "info");
-                    }
-                }
-                return true;
-            } catch (e) {
-                showToast("Connection error", "error");
-                return false;
-            }
-        }
+  async function enterCinema(){
+    // Fullscreen the modal, then lock to landscape. Both are best-effort:
+    // desktop and iOS Safari reject orientation.lock (caught + ignored) and
+    // the player just runs full-window / in the current orientation.
+    try {
+      const rfs = modalEl.requestFullscreen || modalEl.webkitRequestFullscreen;
+      if (rfs){ await rfs.call(modalEl); modalEl.classList.add("cinema"); }
+    } catch (e) {}
+    try {
+      if (screen.orientation && screen.orientation.lock) await screen.orientation.lock("landscape");
+    } catch (e) {}
+    pokeChrome();
+  }
 
-        // Subscribe to a new YouTube Channel
-        async function subscribeChannel(event) {
-            event.preventDefault();
-            const input = document.getElementById("channel-input");
-            const submitBtn = event.target.querySelector("button[type='submit']");
+  function watch(id){
+    const card = document.getElementById("v-" + id);
+    document.getElementById("modal-title").textContent = card ? card.dataset.title : "";
+    document.getElementById("yt-frame").src =
+      `https://www.youtube.com/embed/${id}?autoplay=1&playsinline=1&rel=0&modestbranding=1&fs=1`;
+    modalEl.classList.add("active");
+    document.body.style.overflow = "hidden";
+    enterCinema();
+    if (card && card.dataset.watched === "0"){
+      setVideoState(id, { is_watched: true }, card.querySelector(".toggle-watch"));
+    }
+  }
 
-            const value = input.value.trim();
-            if (!value) return;
+  function closeModal(){
+    clearTimeout(chromeTimer);
+    modalEl.classList.remove("active", "chrome-hidden");
+    document.getElementById("yt-frame").src = "";
+    document.body.style.overflow = "";
+    try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
+    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+    if (fsEl){
+      const efs = document.exitFullscreen || document.webkitExitFullscreen;
+      if (efs) efs.call(document);
+    }
+    modalEl.classList.remove("cinema");
+  }
 
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Subscribing...';
+  // If the user swipes / hits back to leave fullscreen, tear the player down too.
+  function onFsChange(){
+    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+    if (!fsEl){
+      modalEl.classList.remove("cinema", "chrome-hidden");
+      clearTimeout(chromeTimer);
+      try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
+      if (modalEl.classList.contains("active")) closeModal();
+    }
+  }
+  document.addEventListener("fullscreenchange", onFsChange);
+  document.addEventListener("webkitfullscreenchange", onFsChange);
 
-            try {
-                const res = await fetch(`${BASE_PATH}/api/channels`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        channel_id: value,
-                        title: "Channel",
-                        custom_url: "",
-                        thumbnail_url: "",
-                        description: ""
-                    })
-                });
+  /* ---------- video state ---------- */
+  async function setVideoState(id, data, btn){
+    try {
+      const res = await fetch(`${BASE_PATH}/api/videos/${id}`, {
+        method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(data)
+      });
+      if (!res.ok){ const e = await res.json().catch(()=>({})); toast(e.detail || "Update failed", "err"); return null; }
+      const v = await res.json();
+      const card = document.getElementById("v-" + id);
+      if ("is_watched" in data && card){
+        card.dataset.watched = v.is_watched ? "1" : "0";
+        card.classList.toggle("watched", v.is_watched);
+        const wb = card.querySelector(".toggle-watch");
+        if (wb){ wb.classList.toggle("on-watch", v.is_watched);
+          wb.querySelector("use").setAttribute("href", v.is_watched ? "#i-eye" : "#i-eye-off"); }
+      }
+      if ("is_bookmarked" in data && btn){ btn.classList.toggle("on-mark", v.is_bookmarked); }
+      return v;
+    } catch(e){ toast("Connection error", "err"); return null; }
+  }
 
-                if (!res.ok) {
-                    const err = await res.json();
-                    showToast(err.detail || "Failed to subscribe.", "error");
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = '<i class="fa-solid fa-plus"></i> Subscribe';
-                    return;
-                }
+  async function toggleWatched(id, btn){
+    const card = document.getElementById("v-" + id);
+    const next = card.dataset.watched === "0";
+    btn.disabled = true;
+    const v = await setVideoState(id, { is_watched: next }, btn);
+    btn.disabled = false;
+    if (v && ACTIVE_FILTER === "unwatched" && v.is_watched) fadeOut(id);
+    if (v) refreshVitals();
+  }
+  async function toggleMark(id, btn){
+    const on = btn.classList.contains("on-mark");
+    btn.disabled = true;
+    const v = await setVideoState(id, { is_bookmarked: !on }, btn);
+    btn.disabled = false;
+    if (v){
+      toast(v.is_bookmarked ? "Saved" : "Removed from saved", v.is_bookmarked ? "ok" : "info");
+      if (ACTIVE_FILTER === "bookmarked" && !v.is_bookmarked) fadeOut(id);
+      refreshVitals();
+    }
+  }
+  function fadeOut(id){
+    const card = document.getElementById("v-" + id);
+    if (!card) return;
+    card.style.transition = "opacity .25s, transform .25s";
+    card.style.opacity = "0"; card.style.transform = "scale(.96)";
+    setTimeout(() => {
+      card.remove();
+      if (!document.querySelector("#grid .card")) location.reload();
+    }, 260);
+  }
 
-                const channel = await res.json();
-                showToast(`Subscribed to ${channel.title}!`);
-                input.value = "";
+  /* ---------- subscribe / unsubscribe / poll ---------- */
+  async function subscribe(e){
+    e.preventDefault();
+    const input = document.getElementById("sub-input");
+    const btn = document.getElementById("sub-btn");
+    const val = input.value.trim();
+    if (!val) return;
+    btn.disabled = true;
+    btn.innerHTML = '<svg class="ic spin"><use href="#i-refresh"/></svg> Adding…';
+    try {
+      const res = await fetch(`${BASE_PATH}/api/channels`, {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ channel_id: val, title: "Channel", custom_url: "", thumbnail_url: "", description: "" })
+      });
+      if (!res.ok){ const err = await res.json().catch(()=>({})); toast(err.detail || "Failed to subscribe", "err"); }
+      else { const ch = await res.json(); toast(`Subscribed to ${ch.title}`); input.value = ""; setTimeout(() => location.reload(), 800); }
+    } catch(e){ toast("Connection error", "err"); }
+    btn.disabled = false;
+    btn.innerHTML = '<svg class="ic"><use href="#i-plus"/></svg> Add channel';
+  }
 
-                setTimeout(() => {
-                    location.reload();
-                }, 1000);
-            } catch (e) {
-                showToast("Connection error", "error");
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i class="fa-solid fa-plus"></i> Subscribe';
-            }
-        }
+  async function unsubscribe(e, btn){
+    e.preventDefault(); e.stopPropagation();
+    const id = btn.dataset.channelId, title = btn.dataset.channelTitle;
+    if (!confirm(`Unsubscribe from “${title}”?`)) return;
+    try {
+      const res = await fetch(`${BASE_PATH}/api/channels/${id}`, { method: "DELETE" });
+      if (!res.ok){ const e2 = await res.json().catch(()=>({})); toast(e2.detail || "Failed", "err"); return; }
+      toast(`Unsubscribed from ${title}`);
+      setTimeout(() => { location.href = `${BASE_PATH}/?filter_type=${encodeURIComponent(ACTIVE_FILTER)}`; }, 500);
+    } catch(e){ toast("Connection error", "err"); }
+  }
 
-        // Force poll all channels
-        async function pollAllChannels(btn) {
-            btn.disabled = true;
-            const icon = btn.querySelector(".sync-icon");
-            icon.classList.add("fa-spin");
+  async function pollAll(btn){
+    btn.disabled = true;
+    const ic = btn.querySelector(".ic"); ic.classList.add("spin");
+    toast("Polling feeds…", "info");
+    try {
+      const res = await fetch(`${BASE_PATH}/api/channels/poll`, { method: "POST" });
+      const d = await res.json();
+      if (!res.ok) toast("Refresh failed", "err");
+      else { toast(`${d.new_videos_count} new · ${d.message}`); setTimeout(() => location.reload(), 1100); }
+    } catch(e){ toast("Connection error", "err"); }
+    finally { btn.disabled = false; ic.classList.remove("spin"); }
+  }
 
-            showToast("Polling RSS feeds...", "info");
+  async function markAllWatched(btn){
+    const scope = ACTIVE_CHANNEL ? "this channel" : "every feed";
+    if (!confirm(`Mark all unwatched videos in ${scope} as watched?`)) return;
+    btn.disabled = true;
+    try {
+      const res = await fetch(`${BASE_PATH}/api/videos/mark-watched`, {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ channel_id: ACTIVE_CHANNEL })
+      });
+      const d = await res.json();
+      if (!res.ok) toast(d.detail || "Failed", "err");
+      else { toast(d.message); setTimeout(() => location.reload(), 700); }
+    } catch(e){ toast("Connection error", "err"); }
+    btn.disabled = false;
+  }
 
-            try {
-                const res = await fetch(`${BASE_PATH}/api/channels/poll`, { method: 'POST' });
-                if (!res.ok) {
-                    showToast("Failed to refresh feeds.", "error");
-                } else {
-                    const data = await res.json();
-                    showToast(`Refreshed. Added ${data.new_videos_count} new videos.`);
-                    setTimeout(() => {
-                        location.reload();
-                    }, 1200);
-                }
-            } catch (e) {
-                showToast("Connection error", "error");
-            } finally {
-                btn.disabled = false;
-                icon.classList.remove("fa-spin");
-            }
-        }
+  /* ---------- live vitals ---------- */
+  async function refreshVitals(){
+    try {
+      const res = await fetch(`${BASE_PATH}/api/stats`);
+      if (!res.ok) return;
+      const s = await res.json();
+      const set = (k, val) => { document.querySelectorAll(`[data-vital="${k}"]`).forEach(el => { el.textContent = val; }); };
+      set("unwatched", s.unwatched);
+      set("bookmarked", s.bookmarked);
+      set("added_this_week", s.added_this_week);
+      const ef = document.querySelector('[data-vital="errored_feeds"]');
+      if (ef){ ef.textContent = s.errored_feeds ? `${s.errored_feeds} down` : "OK";
+        ef.classList.toggle("bad", !!s.errored_feeds); }
+      const lp = document.querySelector('[data-vital="last_poll"]');
+      if (lp && s.last_polled_at){ lp.dataset.ts = s.last_polled_at; lp.textContent = relTime(s.last_polled_at); }
+    } catch(e){}
+  }
+  (function initLastPoll(){
+    const lp = document.querySelector('[data-vital="last_poll"]');
+    if (lp && lp.dataset.ts) lp.textContent = relTime(lp.dataset.ts);
+  })();
+  setInterval(refreshVitals, 60000);
 
-        // Confirm and unsubscribe
-        async function confirmUnsubscribe(e, btn) {
-            e.stopPropagation();
-            e.preventDefault();
+  /* ---------- keyboard ---------- */
+  let selIdx = -1;
+  function cards(){ return [...document.querySelectorAll("#grid .card")]; }
+  function select(i){
+    const cs = cards(); if (!cs.length) return;
+    selIdx = Math.max(0, Math.min(i, cs.length - 1));
+    cs.forEach((c, n) => c.classList.toggle("sel", n === selIdx));
+    cs[selIdx].scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+  function toggleHelp(){ document.getElementById("help").classList.toggle("active"); }
 
-            const channelId = btn.dataset.channelId;
-            const title = btn.dataset.channelTitle;
-
-            if (!confirm(`Are you sure you want to unsubscribe from '${title}'?`)) {
-                return;
-            }
-
-            try {
-                const res = await fetch(`${BASE_PATH}/api/channels/${channelId}`, { method: 'DELETE' });
-                if (!res.ok) {
-                    const err = await res.json();
-                    showToast(err.detail || "Failed to unsubscribe.", "error");
-                    return;
-                }
-
-                showToast(`Unsubscribed from ${title}`);
-                const row = document.querySelector(`[data-channel-id="${channelId}"]`);
-                if (row) {
-                    row.style.transform = "translateX(-20px)";
-                    row.style.opacity = "0";
-                    setTimeout(() => {
-                        location.href = `${BASE_PATH}/?filter_type={{ active_filter }}`;
-                    }, 300);
-                } else {
-                    location.href = `${BASE_PATH}/?filter_type={{ active_filter }}`;
-                }
-            } catch (e) {
-                showToast("Connection error", "error");
-            }
-        }
-    </script>
+  document.addEventListener("keydown", (e) => {
+    if (e.target.matches("input, textarea")) {
+      if (e.key === "Escape") e.target.blur();
+      return;
+    }
+    if (document.getElementById("modal").classList.contains("active")){
+      if (e.key === "Escape") closeModal();
+      return;
+    }
+    switch (e.key){
+      case "j": select(selIdx + 1); break;
+      case "k": select(selIdx - 1); break;
+      case "o": case "Enter": { const c = cards()[selIdx]; if (c) watch(c.dataset.videoId); break; }
+      case "w": { const c = cards()[selIdx]; if (c) c.querySelector(".toggle-watch").click(); break; }
+      case "b": { const c = cards()[selIdx]; if (c) c.querySelector(".toggle-mark").click(); break; }
+      case "/": e.preventDefault(); document.getElementById("search-input").focus(); break;
+      case "r": document.getElementById("poll-all-btn").click(); break;
+      case "g": setView(localStorage.getItem("yt-relay-view") === "list" ? "grid" : "list"); break;
+      case "?": toggleHelp(); break;
+      case "Escape": document.getElementById("help").classList.remove("active"); closeNav(); break;
+    }
+  });
+</script>
 </body>
-
 </html>
