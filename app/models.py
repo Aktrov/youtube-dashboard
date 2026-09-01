@@ -38,5 +38,12 @@ class Video(Base):
     is_watched = Column(Boolean, default=False)
     is_bookmarked = Column(Boolean, default=False)
     added_at = Column(DateTime, default=datetime.utcnow)
+    # Resume playback: last known position (seconds) and the video's total
+    # length, so we can restart where the user left off and tell when a video
+    # is "basically finished". playback_seconds is 0/NULL when unstarted or
+    # completed; playback_updated_at stamps the last save.
+    playback_seconds = Column(Integer, nullable=True)
+    duration_seconds = Column(Integer, nullable=True)
+    playback_updated_at = Column(DateTime, nullable=True)
 
     channel = relationship("Channel", back_populates="videos")

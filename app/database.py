@@ -28,6 +28,11 @@ _ADDITIVE_COLUMNS = {
         "last_poll_ok": "BOOLEAN",
         "last_poll_error": "TEXT",
     },
+    "videos": {
+        "playback_seconds": "INTEGER",
+        "duration_seconds": "INTEGER",
+        "playback_updated_at": "DATETIME",
+    },
 }
 
 

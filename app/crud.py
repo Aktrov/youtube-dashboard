@@ -101,6 +101,12 @@ def get_dashboard_stats(db: Session) -> Dict[str, Any]:
         models.Video.added_at >= week_ago
     ).scalar() or 0
 
+    in_progress = db.query(func.count(models.Video.id)).filter(
+        models.Video.is_watched == False,  # noqa: E712
+        models.Video.playback_seconds.isnot(None),
+        models.Video.playback_seconds > 0,
+    ).scalar() or 0
+
     errored = db.query(func.count(models.Channel.id)).filter(
         models.Channel.last_poll_ok == False  # noqa: E712
     ).scalar() or 0
@@ -126,6 +132,7 @@ def get_dashboard_stats(db: Session) -> Dict[str, Any]:
         "unwatched": unwatched,
         "bookmarked": bookmarked,
         "added_this_week": added_this_week,
+        "in_progress": in_progress,
         "errored_feeds": errored,
         "never_polled": never_polled,
         "last_polled_at": last_poll_iso,
@@ -144,6 +151,7 @@ def get_videos(
     channel_id: Optional[str] = None,
     is_watched: Optional[bool] = None,
     is_bookmarked: Optional[bool] = None,
+    in_progress: bool = False,
     since: Optional[datetime] = None,
     sort: str = "newest",
     skip: int = 0,
@@ -157,6 +165,12 @@ def get_videos(
         query = query.filter(models.Video.is_watched == is_watched)
     if is_bookmarked is not None:
         query = query.filter(models.Video.is_bookmarked == is_bookmarked)
+    if in_progress:
+        query = query.filter(
+            models.Video.is_watched == False,  # noqa: E712
+            models.Video.playback_seconds.isnot(None),
+            models.Video.playback_seconds > 0,
+        )
     if since is not None:
         query = query.filter(models.Video.published_at >= since)
 
@@ -252,12 +266,14 @@ def prune_videos_for_channel(db: Session, channel_id: str):
 
     # We want to keep:
     # 1. The keep_n latest videos
-    # 2. Any videos where is_bookmarked is True
+    # 2. Any bookmarked video
+    # 3. Any video the user is partway through (has a resume point) — otherwise
+    #    it would be deleted out from under them before they finish it
     to_keep = set()
     for v in videos[:keep_n]:
         to_keep.add(v.video_id)
     for v in videos:
-        if v.is_bookmarked:
+        if v.is_bookmarked or (v.playback_seconds or 0) > 0:
             to_keep.add(v.video_id)
             
     # Delete any video not in the keep set
@@ -301,8 +317,56 @@ def update_video_status(
     if db_video:
         if is_watched is not None:
             db_video.is_watched = is_watched
+            # Marking watched by hand also clears the resume point; un-watching
+            # leaves playback_seconds alone (it's already 0/NULL in practice).
+            if is_watched:
+                db_video.playback_seconds = None
         if is_bookmarked is not None:
             db_video.is_bookmarked = is_bookmarked
         db.commit()
         db.refresh(db_video)
+    return db_video
+
+
+# A video within this many seconds of its end, or past this fraction, counts as
+# finished: clear the resume point and mark it watched.
+_FINISH_TAIL_SECONDS = 15
+_FINISH_FRACTION = 0.97
+# Below this many seconds, playback hasn't really started — nothing to resume.
+_RESUME_FLOOR_SECONDS = 10
+
+
+def update_video_progress(
+    db: Session,
+    video_id: str,
+    seconds: float,
+    duration: Optional[float] = None,
+) -> Optional[models.Video]:
+    """Record how far into a video the user has watched, for resume-on-reopen.
+    Auto-marks the video watched (and clears the resume point) once playback
+    reaches the end."""
+    db_video = db.query(models.Video).filter(models.Video.video_id == video_id).first()
+    if not db_video:
+        return None
+
+    seconds = max(0, int(seconds or 0))
+    if duration and duration > 0:
+        db_video.duration_seconds = int(duration)
+
+    dur = db_video.duration_seconds or 0
+    finished = dur > 0 and (
+        seconds >= dur - _FINISH_TAIL_SECONDS or seconds >= dur * _FINISH_FRACTION
+    )
+
+    if finished:
+        db_video.playback_seconds = None
+        db_video.is_watched = True
+    elif seconds >= _RESUME_FLOOR_SECONDS:
+        db_video.playback_seconds = seconds
+    else:
+        db_video.playback_seconds = None
+
+    db_video.playback_updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(db_video)
     return db_video

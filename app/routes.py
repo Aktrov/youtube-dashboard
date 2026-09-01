@@ -32,7 +32,7 @@ def _range_cutoff(range_key: str) -> Optional[datetime]:
 def dashboard_view(
     request: Request,
     channel_id: Optional[str] = None,
-    filter_type: str = "unwatched",  # "all", "unwatched", "bookmarked"
+    filter_type: str = "unwatched",  # "all", "unwatched", "bookmarked", "inprogress"
     q: Optional[str] = None,
     sort: str = "newest",            # "newest", "oldest"
     range: str = "all",              # "today", "week", "month", "all"
@@ -44,11 +44,14 @@ def dashboard_view(
 
     is_watched = None
     is_bookmarked = None
+    in_progress = False
 
     if filter_type == "unwatched":
         is_watched = False
     elif filter_type == "bookmarked":
         is_bookmarked = True
+    elif filter_type == "inprogress":
+        in_progress = True
 
     # Get videos matching the status filters
     videos = crud.get_videos(
@@ -56,6 +59,7 @@ def dashboard_view(
         channel_id=channel_id,
         is_watched=is_watched,
         is_bookmarked=is_bookmarked,
+        in_progress=in_progress,
         since=_range_cutoff(range),
         sort=sort if sort in ("newest", "oldest") else "newest",
         limit=200
@@ -235,6 +239,33 @@ def update_video(
     if not video:
         raise HTTPException(status_code=404, detail="Video not found.")
     return video
+
+
+class ProgressRequest(BaseModel):
+    seconds: float
+    duration: Optional[float] = None
+
+
+@router.post("/api/videos/{video_id}/progress")
+def save_video_progress(
+    video_id: str,
+    payload: ProgressRequest,
+    db: Session = Depends(database.get_db),
+):
+    """Store the current playback position for resume-on-reopen. Called
+    periodically while a video plays, and on pause / close / end / tab-hide
+    (the last via navigator.sendBeacon)."""
+    video = crud.update_video_progress(
+        db, video_id=video_id, seconds=payload.seconds, duration=payload.duration
+    )
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found.")
+    return {
+        "video_id": video.video_id,
+        "playback_seconds": video.playback_seconds or 0,
+        "duration_seconds": video.duration_seconds or 0,
+        "is_watched": video.is_watched,
+    }
 
 
 class BulkWatchRequest(BaseModel):
