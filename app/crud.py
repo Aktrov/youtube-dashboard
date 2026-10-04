@@ -74,6 +74,47 @@ def set_channel_poll_result(
     return db_channel
 
 
+def get_cached_video_type(db: Session, video_id: str) -> Optional[bool]:
+    """Returns the cached is_short verdict for a video_id, or None if it's
+    never been checked."""
+    row = db.query(models.VideoTypeCache).filter(models.VideoTypeCache.video_id == video_id).first()
+    return row.is_short if row else None
+
+
+def set_cached_video_type(db: Session, video_id: str, is_short: bool) -> None:
+    row = db.query(models.VideoTypeCache).filter(models.VideoTypeCache.video_id == video_id).first()
+    if row:
+        row.is_short = is_short
+        row.checked_at = datetime.utcnow()
+    else:
+        db.add(models.VideoTypeCache(video_id=video_id, is_short=is_short, checked_at=datetime.utcnow()))
+    db.commit()
+
+
+def is_video_short_cached(db: Session, video_id: str) -> bool:
+    """Short/long-form check with a database-backed cache in front of the
+    network call. A video's type never changes after upload, so once we've
+    checked a video_id we never hit YouTube for it again -- this is what
+    keeps the scheduler responsive: without it, every Short in a channel's
+    RSS window gets re-checked over the network on every single poll,
+    forever (Shorts are never stored as Video rows, so `exists` never
+    short-circuits them)."""
+    cached = get_cached_video_type(db, video_id)
+    if cached is not None:
+        return cached
+
+    result = rss.is_video_short_bounded(video_id)
+    if result is None:
+        # Hard-timeout case: unknown, not a confirmed verdict. Don't cache a
+        # guess -- treat as "not a Short" just for this poll so ingestion
+        # isn't blocked, and let it be re-checked (hopefully successfully)
+        # next time.
+        return False
+
+    set_cached_video_type(db, video_id, result)
+    return result
+
+
 def get_channel_unwatched_counts(db: Session) -> Dict[str, int]:
     """{channel_id: number of unwatched videos} for every channel with at least one."""
     rows = (
@@ -204,8 +245,9 @@ def add_videos_if_not_exists(db: Session, channel_id: str, videos_data: List[Dic
     Add up to settings.keep_per_channel videos from the RSS feed to the
     database for this channel. The feed data comes from the UULF (Videos-only)
     playlist, but that filtering isn't reliable (longer-format Shorts
-    especially slip through), so each new candidate is verified directly
-    against YouTube via rss.is_video_short() before being stored.
+    especially slip through), so each new candidate is verified via
+    is_video_short_cached() (network hit only on the first-ever check of a
+    given video_id) before being stored.
     """
     MAX_PER_CHANNEL = settings.keep_per_channel
 
@@ -221,7 +263,7 @@ def add_videos_if_not_exists(db: Session, channel_id: str, videos_data: List[Dic
             stored_count += 1
             continue
 
-        if rss.is_video_short(video["video_id"]):
+        if is_video_short_cached(db, video["video_id"]):
             continue
 
         db_video = models.Video(
@@ -291,13 +333,15 @@ def prune_videos_for_channel(db: Session, channel_id: str):
 def remove_misclassified_shorts(db: Session) -> int:
     """
     Scans every stored video and deletes any that are actually YouTube
-    Shorts, verified via rss.is_video_short(). Needed because the UULF
-    feed's Shorts filtering isn't perfect, so some Shorts get stored as
-    regular videos before this check existed / runs again.
+    Shorts, verified via is_video_short_cached() (cached after the first
+    check, so re-runs on later startups don't re-hit the network for videos
+    already classified). Needed because the UULF feed's Shorts filtering
+    isn't perfect, so some Shorts get stored as regular videos before this
+    check existed / runs again.
     """
     removed = 0
     for video in db.query(models.Video).all():
-        if rss.is_video_short(video.video_id):
+        if is_video_short_cached(db, video.video_id):
             db.delete(video)
             removed += 1
 

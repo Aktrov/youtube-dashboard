@@ -1,6 +1,7 @@
 import re
 import urllib.request
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
@@ -256,3 +257,28 @@ def is_video_short(video_id: str) -> bool:
         # On error, default to False to avoid missing regular videos
         print(f"Error checking if video {video_id} is a Short: {e}")
         return False
+
+
+# is_video_short()'s own urlopen(timeout=5) covers connect/read stalls, but
+# NOT a hung DNS lookup (getaddrinfo isn't bound by that timeout on every
+# platform) -- the one way this call can block well past 5s with no
+# exception raised. A small daemon-thread pool + hard wall-clock deadline is
+# the last line of defense so a single bad lookup can never freeze the
+# scheduler loop. Bounded to a couple of workers: normal operation with a
+# warm cache barely touches this, so a stuck lookup tying up a worker for a
+# while is an acceptable, rare cost.
+_short_check_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="short-check")
+
+
+def is_video_short_bounded(video_id: str, hard_timeout: float = 8.0) -> Optional[bool]:
+    """Runs is_video_short() with a hard wall-clock deadline on top of its
+    own socket timeout. Returns None (unknown) if the deadline is hit --
+    callers should treat that as "try again next poll", not cache it, so a
+    transient hang self-heals instead of freezing a channel's video type
+    forever."""
+    future = _short_check_executor.submit(is_video_short, video_id)
+    try:
+        return future.result(timeout=hard_timeout)
+    except FutureTimeoutError:
+        print(f"[Shorts] Hard timeout ({hard_timeout}s) checking video {video_id}; will retry on next poll.")
+        return None

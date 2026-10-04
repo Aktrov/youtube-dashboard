@@ -47,3 +47,18 @@ class Video(Base):
     playback_updated_at = Column(DateTime, nullable=True)
 
     channel = relationship("Channel", back_populates="videos")
+
+
+class VideoTypeCache(Base):
+    """Caches whether a given YouTube video_id is a Short, so we never have
+    to re-hit https://www.youtube.com/shorts/{video_id} for the same video
+    twice. A video's Short/long-form status doesn't change after upload, so
+    entries never expire. This is keyed independently of the `videos` table
+    because a video classified as a Short is never stored there — without
+    this cache it would get re-checked over the network on every single poll
+    for as long as it stays in the channel's RSS window."""
+    __tablename__ = "video_type_cache"
+
+    video_id = Column(String, primary_key=True, index=True)
+    is_short = Column(Boolean, nullable=False)
+    checked_at = Column(DateTime, default=datetime.utcnow)
